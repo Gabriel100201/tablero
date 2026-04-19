@@ -14,7 +14,7 @@ TOOLS:
   tasks_create   — create a task in a specific provider/project
   tasks_update   — update task status, title, priority
   tasks_search   — search tasks by keyword across all providers
-  tasks_projects — list all teams and projects from all providers
+  tasks_projects — list teams and projects from all providers (filter by kind=team|project|all; Linear projects include health, priority, lead, target date, progress)
   tasks_states   — list valid workflow states for a project
   docs_list      — list Linear documents (filter by provider/project/query)
   docs_get       — read a Linear document by slugId or UUID (returns markdown content)
@@ -187,7 +187,7 @@ func registerTools(srv *server.MCPServer, reg *provider.Registry) {
 	// ─── tasks_projects ──────────────────────────────────────────────────
 	srv.AddTool(
 		mcp.NewTool("tasks_projects",
-			mcp.WithDescription("List all projects across all connected providers. Use this to discover where to create tasks."),
+			mcp.WithDescription("List teams and projects across all connected providers. For Linear, returns both Teams (key + name) and Projects inside each team (with health, priority, lead, target date, progress). Use this to discover where to create tasks or to see a project portfolio overview."),
 			mcp.WithTitleAnnotation("List Projects"),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),
@@ -195,6 +195,9 @@ func registerTools(srv *server.MCPServer, reg *provider.Registry) {
 			mcp.WithOpenWorldHintAnnotation(true),
 			mcp.WithString("provider",
 				mcp.Description("Filter to a specific provider"),
+			),
+			mcp.WithString("kind",
+				mcp.Description("Filter by kind: 'team' (only Linear teams), 'project' (only projects inside teams), or 'all' (default). Use 'project' when you want the portfolio view that mirrors Linear's All Projects screen."),
 			),
 		),
 		handleTasksProjects(reg),

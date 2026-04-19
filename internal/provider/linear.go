@@ -323,7 +323,13 @@ func (l *linearProvider) ListProjects(ctx context.Context) ([]Project, error) {
 			nodes {
 				id name key
 				projects(first: 100) {
-					nodes { id name }
+					nodes {
+						id name description
+						state priority priorityLabel
+						health url
+						startDate targetDate progress
+						lead { name displayName }
+					}
 				}
 			}
 		}
@@ -337,10 +343,7 @@ func (l *linearProvider) ListProjects(ctx context.Context) ([]Project, error) {
 					Name     string `json:"name"`
 					Key      string `json:"key"`
 					Projects struct {
-						Nodes []struct {
-							ID   string `json:"id"`
-							Name string `json:"name"`
-						} `json:"nodes"`
+						Nodes []linearProject `json:"nodes"`
 					} `json:"projects"`
 				} `json:"nodes"`
 			} `json:"teams"`
@@ -367,15 +370,7 @@ func (l *linearProvider) ListProjects(ctx context.Context) ([]Project, error) {
 				continue
 			}
 			seenProjects[p.ID] = true
-			projects = append(projects, Project{
-				Source:     l.name,
-				SourceType: "linear",
-				ID:         p.ID,
-				Name:       p.Name,
-				Key:        "",
-				Kind:       "project",
-				ParentTeam: t.Name,
-			})
+			projects = append(projects, p.toProject(l.name, t.Name))
 		}
 	}
 	return projects, nil
@@ -650,6 +645,64 @@ func (n *linearIssueDetail) toTaskDetail(source string) *TaskDetail {
 		Assignee:    assignee,
 		Estimate:    n.Estimate,
 		Milestone:   milestone,
+	}
+}
+
+type linearProject struct {
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	Description   string   `json:"description"`
+	State         string   `json:"state"`
+	Priority      int      `json:"priority"`
+	PriorityLabel string   `json:"priorityLabel"`
+	Health        string   `json:"health"`
+	URL           string   `json:"url"`
+	StartDate     *string  `json:"startDate"`
+	TargetDate    *string  `json:"targetDate"`
+	Progress      *float64 `json:"progress"`
+	Lead          *struct {
+		Name        string `json:"name"`
+		DisplayName string `json:"displayName"`
+	} `json:"lead"`
+}
+
+func (p *linearProject) toProject(source, parentTeam string) Project {
+	start := ""
+	if p.StartDate != nil {
+		start = *p.StartDate
+	}
+	target := ""
+	if p.TargetDate != nil {
+		target = *p.TargetDate
+	}
+	progress := 0.0
+	if p.Progress != nil {
+		progress = *p.Progress
+	}
+	lead := ""
+	if p.Lead != nil {
+		lead = p.Lead.DisplayName
+		if lead == "" {
+			lead = p.Lead.Name
+		}
+	}
+	return Project{
+		Source:      source,
+		SourceType:  "linear",
+		ID:          p.ID,
+		Name:        p.Name,
+		Key:         "",
+		Kind:        "project",
+		ParentTeam:  parentTeam,
+		Description: p.Description,
+		Status:      p.State,
+		Health:      p.Health,
+		Priority:    p.PriorityLabel,
+		Lead:        lead,
+		StartDate:   start,
+		TargetDate:  target,
+		Progress:    progress,
+		URL:         p.URL,
 	}
 }
 

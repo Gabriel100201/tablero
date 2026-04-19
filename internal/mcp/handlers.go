@@ -240,6 +240,13 @@ func handleTasksSearch(reg *provider.Registry) func(ctx context.Context, req mcp
 func handleTasksProjects(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		providerFilter := strParam(req, "provider")
+		kindFilter := strings.ToLower(strParam(req, "kind"))
+		if kindFilter == "" {
+			kindFilter = "all"
+		}
+		if kindFilter != "all" && kindFilter != "team" && kindFilter != "project" {
+			return mcp.NewToolResultError(fmt.Sprintf("invalid kind %q (valid: team, project, all)", kindFilter)), nil
+		}
 
 		projects, warnings, err := reg.AllProjects(ctx, providerFilter)
 		if err != nil {
@@ -254,33 +261,73 @@ func handleTasksProjects(reg *provider.Registry) func(ctx context.Context, req m
 			sb.WriteString("\n")
 		}
 
-		if len(projects) == 0 {
+		// Filter by kind.
+		var teams, projs []provider.Project
+		for _, p := range projects {
+			switch p.Kind {
+			case "team":
+				teams = append(teams, p)
+			case "project":
+				projs = append(projs, p)
+			default:
+				// Unknown kind falls into teams bucket so it's still visible.
+				teams = append(teams, p)
+			}
+		}
+
+		showTeams := kindFilter == "all" || kindFilter == "team"
+		showProjects := kindFilter == "all" || kindFilter == "project"
+
+		if (!showTeams || len(teams) == 0) && (!showProjects || len(projs) == 0) {
 			sb.WriteString("No projects found.")
 			return mcp.NewToolResultText(sb.String()), nil
 		}
 
-		sb.WriteString("## Projects\n\n")
-		sb.WriteString("| Provider | Source | Kind | Name | Key | Parent Team |\n")
-		sb.WriteString("|---|---|---|---|---|---|\n")
-		for _, p := range projects {
-			kind := p.Kind
-			if kind == "" {
-				kind = "-"
+		if showTeams && len(teams) > 0 {
+			sb.WriteString("## Teams\n\n")
+			sb.WriteString("| Provider | Source | Name | Key |\n")
+			sb.WriteString("|---|---|---|---|\n")
+			for _, t := range teams {
+				key := t.Key
+				if key == "" {
+					key = "-"
+				}
+				sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n",
+					t.Source, t.SourceType, t.Name, key))
 			}
-			key := p.Key
-			if key == "" {
-				key = "-"
+			sb.WriteString("\n")
+		}
+
+		if showProjects && len(projs) > 0 {
+			sb.WriteString("## Projects\n\n")
+			sb.WriteString("| Provider | Team | Name | Status | Health | Priority | Lead | Target | Progress |\n")
+			sb.WriteString("|---|---|---|---|---|---|---|---|---|\n")
+			for _, p := range projs {
+				team := p.ParentTeam
+				if team == "" {
+					team = "-"
+				}
+				status := dashIfEmpty(p.Status)
+				health := dashIfEmpty(p.Health)
+				priority := dashIfEmpty(p.Priority)
+				lead := dashIfEmpty(p.Lead)
+				target := dashIfEmpty(p.TargetDate)
+				progress := fmt.Sprintf("%.0f%%", p.Progress*100)
+				sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n",
+					p.Source, team, p.Name, status, health, priority, lead, target, progress))
 			}
-			parent := p.ParentTeam
-			if parent == "" {
-				parent = "-"
-			}
-			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
-				p.Source, p.SourceType, kind, p.Name, key, parent))
+			sb.WriteString("\n")
 		}
 
 		return mcp.NewToolResultText(sb.String()), nil
 	}
+}
+
+func dashIfEmpty(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 // ─── Documents ────────────────────────────────────────────────────────────────

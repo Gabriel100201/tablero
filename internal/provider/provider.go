@@ -49,6 +49,17 @@ type Project struct {
 	Key        string // team key for Linear, slug for Taiga
 	Kind       string // "team" | "project" (Linear), "project" (Taiga)
 	ParentTeam string // parent team name for Linear projects; empty otherwise
+
+	// Rich fields (populated for Linear projects; empty for teams and Taiga).
+	Description string  // short summary
+	Status      string  // Linear project state: "planned" | "started" | "paused" | "completed" | "canceled" | "backlog"
+	Health      string  // Linear project health: "onTrack" | "atRisk" | "offTrack" | ""
+	Priority    string  // "Urgent" | "High" | "Medium" | "Low" | "None"
+	Lead        string  // lead user's display name
+	StartDate   string  // ISO 8601 or empty
+	TargetDate  string  // ISO 8601 or empty
+	Progress    float64 // 0.0 — 1.0
+	URL         string  // Linear project URL
 }
 
 type State struct {
