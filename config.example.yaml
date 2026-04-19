@@ -1,0 +1,31 @@
+# Tablero configuration — copy to ~/.tablero/config.yaml (or set TABLERO_CONFIG)
+# and fill in your credentials. Or run `tablero config add <type>` to do it interactively.
+#
+# You can connect as many providers as you want. Each one needs a unique `name`.
+# The name is an arbitrary label (e.g. "work", "personal", "acme-linear").
+# It's how you'll refer to the provider from the MCP tools.
+
+providers:
+  # Example: a Linear workspace
+  - name: work
+    type: linear
+    api_key: "lin_api_XXXXXXXXXXXXXXXXXXXXXXXX"
+
+  # Example: a second Linear workspace (side project, client, etc.)
+  - name: personal
+    type: linear
+    api_key: "lin_api_YYYYYYYYYYYYYYYYYYYYYYYY"
+
+  # Example: a Taiga instance (self-hosted or cloud)
+  - name: team-taiga
+    type: taiga
+    url: "https://taiga.example.com"
+    username: "your-username"
+    password: "your-password"
+
+  # You can connect multiple Taiga instances too
+  - name: another-taiga
+    type: taiga
+    url: "https://tree.taiga.io"
+    username: "another-user"
+    password: "another-password"

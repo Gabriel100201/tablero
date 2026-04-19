@@ -1,0 +1,527 @@
+package mcp
+
+import (
+	"context"
+	"fmt"
+	"strings"
+
+	"github.com/Gabriel100201/tablero/internal/provider"
+	"github.com/mark3labs/mcp-go/mcp"
+)
+
+func strParam(req mcp.CallToolRequest, key string) string {
+	return req.GetString(key, "")
+}
+
+func strPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func handleTasksList(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		opts := provider.ListOpts{
+			Provider: strParam(req, "provider"),
+			Project:  strParam(req, "project"),
+			State:    strParam(req, "state"),
+			Assigned: req.GetBool("assigned", false),
+		}
+
+		tasks, warnings, err := reg.AllTasks(ctx, opts)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error: %v\nWarnings: %s", err, strings.Join(warnings, "; "))), nil
+		}
+
+		var sb strings.Builder
+
+		if len(warnings) > 0 {
+			sb.WriteString("**Warnings:**\n")
+			for _, w := range warnings {
+				sb.WriteString(fmt.Sprintf("- %s\n", w))
+			}
+			sb.WriteString("\n---\n\n")
+		}
+
+		if len(tasks) == 0 {
+			sb.WriteString("No open tasks found.")
+			return mcp.NewToolResultText(sb.String()), nil
+		}
+
+		// Group by source
+		grouped := make(map[string][]provider.Task)
+		var order []string
+		for _, t := range tasks {
+			if _, seen := grouped[t.Source]; !seen {
+				order = append(order, t.Source)
+			}
+			grouped[t.Source] = append(grouped[t.Source], t)
+		}
+
+		for _, source := range order {
+			sourceTasks := grouped[source]
+			sb.WriteString(fmt.Sprintf("## %s (%s) — %d tasks\n\n", strings.ToUpper(source), sourceTasks[0].SourceType, len(sourceTasks)))
+			sb.WriteString("| ID | Title | Status | Priority | Project | Due |\n")
+			sb.WriteString("|---|---|---|---|---|---|\n")
+			for _, t := range sourceTasks {
+				due := t.DueDate
+				if due == "" {
+					due = "-"
+				}
+				priority := t.Priority
+				if priority == "" {
+					priority = "-"
+				}
+				title := t.Title
+				if len(title) > 60 {
+					title = title[:57] + "..."
+				}
+				sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
+					t.Identifier, title, t.Status, priority, t.Project, due))
+			}
+			sb.WriteString("\n")
+		}
+
+		sb.WriteString(fmt.Sprintf("**Total: %d tasks**", len(tasks)))
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleTasksGet(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		identifier := strParam(req, "identifier")
+		if identifier == "" {
+			return mcp.NewToolResultError("identifier is required"), nil
+		}
+
+		detail, err := reg.GetTask(ctx, identifier)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error: %v", err)), nil
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("# %s — %s\n\n", detail.Identifier, detail.Title))
+		sb.WriteString(fmt.Sprintf("**Source:** %s (%s)\n", detail.Source, detail.SourceType))
+		sb.WriteString(fmt.Sprintf("**Project:** %s\n", detail.Project))
+		sb.WriteString(fmt.Sprintf("**Status:** %s\n", detail.Status))
+
+		if detail.Priority != "" {
+			sb.WriteString(fmt.Sprintf("**Priority:** %s\n", detail.Priority))
+		}
+		if detail.Assignee != "" {
+			sb.WriteString(fmt.Sprintf("**Assignee:** %s\n", detail.Assignee))
+		}
+		if detail.DueDate != "" {
+			sb.WriteString(fmt.Sprintf("**Due Date:** %s\n", detail.DueDate))
+		}
+		if detail.Milestone != "" {
+			sb.WriteString(fmt.Sprintf("**Milestone:** %s\n", detail.Milestone))
+		}
+		if detail.Estimate != nil {
+			sb.WriteString(fmt.Sprintf("**Estimate:** %.0f\n", *detail.Estimate))
+		}
+		if len(detail.Labels) > 0 {
+			sb.WriteString(fmt.Sprintf("**Labels:** %s\n", strings.Join(detail.Labels, ", ")))
+		}
+		if detail.URL != "" {
+			sb.WriteString(fmt.Sprintf("**URL:** %s\n", detail.URL))
+		}
+		sb.WriteString(fmt.Sprintf("**Created:** %s\n", detail.CreatedAt))
+		sb.WriteString(fmt.Sprintf("**Updated:** %s\n", detail.UpdatedAt))
+
+		if detail.Description != "" {
+			sb.WriteString(fmt.Sprintf("\n## Description\n\n%s\n", detail.Description))
+		}
+
+		if len(detail.Comments) > 0 {
+			sb.WriteString(fmt.Sprintf("\n## Comments (%d)\n\n", len(detail.Comments)))
+			for _, c := range detail.Comments {
+				sb.WriteString(fmt.Sprintf("**%s** (%s):\n%s\n\n", c.Author, c.CreatedAt, c.Body))
+			}
+		}
+
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleTasksCreate(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		input := provider.CreateInput{
+			Provider:    strParam(req, "provider"),
+			Project:     strParam(req, "project"),
+			Title:       strParam(req, "title"),
+			Description: strParam(req, "description"),
+			Priority:    strParam(req, "priority"),
+			StateID:     strParam(req, "state_id"),
+			Type:        strParam(req, "type"),
+		}
+
+		if input.Provider == "" || input.Project == "" || input.Title == "" {
+			return mcp.NewToolResultError("provider, project, and title are required"), nil
+		}
+
+		task, err := reg.CreateTask(ctx, input)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error creating task: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Task created: **%s** — %s\nStatus: %s | Project: %s",
+			task.Identifier, task.Title, task.Status, task.Project)), nil
+	}
+}
+
+func handleTasksUpdate(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		identifier := strParam(req, "identifier")
+		if identifier == "" {
+			return mcp.NewToolResultError("identifier is required"), nil
+		}
+
+		input := provider.UpdateInput{
+			Title:       strPtr(strParam(req, "title")),
+			Description: strPtr(strParam(req, "description")),
+			StateID:     strPtr(strParam(req, "state_id")),
+			Priority:    strPtr(strParam(req, "priority")),
+		}
+
+		task, err := reg.UpdateTask(ctx, identifier, input)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error updating task: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Task updated: **%s** — %s\nStatus: %s",
+			task.Identifier, task.Title, task.Status)), nil
+	}
+}
+
+func handleTasksSearch(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		query := strParam(req, "query")
+		if query == "" {
+			return mcp.NewToolResultError("query is required"), nil
+		}
+
+		providerFilter := strParam(req, "provider")
+		tasks, warnings, err := reg.SearchTasks(ctx, query, providerFilter)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error: %v", err)), nil
+		}
+
+		var sb strings.Builder
+		if len(warnings) > 0 {
+			for _, w := range warnings {
+				sb.WriteString(fmt.Sprintf("Warning: %s\n", w))
+			}
+			sb.WriteString("\n")
+		}
+
+		if len(tasks) == 0 {
+			sb.WriteString(fmt.Sprintf("No tasks found matching %q", query))
+			return mcp.NewToolResultText(sb.String()), nil
+		}
+
+		sb.WriteString(fmt.Sprintf("## Search results for %q — %d matches\n\n", query, len(tasks)))
+		sb.WriteString("| ID | Title | Status | Source | Project |\n")
+		sb.WriteString("|---|---|---|---|---|\n")
+		for _, t := range tasks {
+			title := t.Title
+			if len(title) > 60 {
+				title = title[:57] + "..."
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+				t.Identifier, title, t.Status, t.Source, t.Project))
+		}
+
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleTasksProjects(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		providerFilter := strParam(req, "provider")
+
+		projects, warnings, err := reg.AllProjects(ctx, providerFilter)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error: %v", err)), nil
+		}
+
+		var sb strings.Builder
+		if len(warnings) > 0 {
+			for _, w := range warnings {
+				sb.WriteString(fmt.Sprintf("Warning: %s\n", w))
+			}
+			sb.WriteString("\n")
+		}
+
+		if len(projects) == 0 {
+			sb.WriteString("No projects found.")
+			return mcp.NewToolResultText(sb.String()), nil
+		}
+
+		sb.WriteString("## Projects\n\n")
+		sb.WriteString("| Provider | Source | Kind | Name | Key | Parent Team |\n")
+		sb.WriteString("|---|---|---|---|---|---|\n")
+		for _, p := range projects {
+			kind := p.Kind
+			if kind == "" {
+				kind = "-"
+			}
+			key := p.Key
+			if key == "" {
+				key = "-"
+			}
+			parent := p.ParentTeam
+			if parent == "" {
+				parent = "-"
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n",
+				p.Source, p.SourceType, kind, p.Name, key, parent))
+		}
+
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+// ─── Documents ────────────────────────────────────────────────────────────────
+
+func handleDocsList(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		opts := provider.DocumentListOpts{
+			Provider: strParam(req, "provider"),
+			Project:  strParam(req, "project"),
+			Query:    strParam(req, "query"),
+		}
+
+		docs, warnings, err := reg.AllDocuments(ctx, opts)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error: %v", err)), nil
+		}
+
+		var sb strings.Builder
+		if len(warnings) > 0 {
+			sb.WriteString("**Warnings:**\n")
+			for _, w := range warnings {
+				sb.WriteString(fmt.Sprintf("- %s\n", w))
+			}
+			sb.WriteString("\n---\n\n")
+		}
+
+		if len(docs) == 0 {
+			sb.WriteString("No documents found.")
+			return mcp.NewToolResultText(sb.String()), nil
+		}
+
+		grouped := make(map[string][]provider.Document)
+		var order []string
+		for _, d := range docs {
+			if _, seen := grouped[d.Source]; !seen {
+				order = append(order, d.Source)
+			}
+			grouped[d.Source] = append(grouped[d.Source], d)
+		}
+
+		for _, source := range order {
+			group := grouped[source]
+			sb.WriteString(fmt.Sprintf("## %s — %d docs\n\n", strings.ToUpper(source), len(group)))
+			sb.WriteString("| Slug | Title | Project | Creator | Updated |\n")
+			sb.WriteString("|---|---|---|---|---|\n")
+			for _, d := range group {
+				title := d.Title
+				if len(title) > 60 {
+					title = title[:57] + "..."
+				}
+				project := d.Project
+				if project == "" {
+					project = "-"
+				}
+				creator := d.Creator
+				if creator == "" {
+					creator = "-"
+				}
+				sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s |\n",
+					d.SlugID, title, project, creator, d.UpdatedAt))
+			}
+			sb.WriteString("\n")
+		}
+		sb.WriteString(fmt.Sprintf("**Total: %d docs**", len(docs)))
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleDocsGet(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		identifier := strParam(req, "identifier")
+		if identifier == "" {
+			return mcp.NewToolResultError("identifier is required (slugId or UUID)"), nil
+		}
+		providerName := strParam(req, "provider")
+
+		doc, err := reg.GetDocument(ctx, providerName, identifier)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error: %v", err)), nil
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("# %s\n\n", doc.Title))
+		sb.WriteString(fmt.Sprintf("**Source:** %s (%s)\n", doc.Source, doc.SourceType))
+		sb.WriteString(fmt.Sprintf("**Slug:** %s\n", doc.SlugID))
+		sb.WriteString(fmt.Sprintf("**ID:** %s\n", doc.ID))
+		if doc.Project != "" {
+			sb.WriteString(fmt.Sprintf("**Project:** %s\n", doc.Project))
+		}
+		if doc.Creator != "" {
+			sb.WriteString(fmt.Sprintf("**Creator:** %s\n", doc.Creator))
+		}
+		if doc.URL != "" {
+			sb.WriteString(fmt.Sprintf("**URL:** %s\n", doc.URL))
+		}
+		sb.WriteString(fmt.Sprintf("**Created:** %s\n", doc.CreatedAt))
+		sb.WriteString(fmt.Sprintf("**Updated:** %s\n", doc.UpdatedAt))
+
+		if doc.Content != "" {
+			sb.WriteString("\n---\n\n")
+			sb.WriteString(doc.Content)
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleDocsCreate(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		input := provider.DocumentCreateInput{
+			Provider: strParam(req, "provider"),
+			Project:  strParam(req, "project"),
+			Title:    strParam(req, "title"),
+			Content:  strParam(req, "content"),
+			Icon:     strParam(req, "icon"),
+			Color:    strParam(req, "color"),
+		}
+
+		if input.Provider == "" || input.Project == "" || input.Title == "" {
+			return mcp.NewToolResultError("provider, project, and title are required"), nil
+		}
+
+		doc, err := reg.CreateDocument(ctx, input)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error creating document: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Document created: **%s**\nSlug: %s | Project: %s | URL: %s",
+			doc.Title, doc.SlugID, doc.Project, doc.URL)), nil
+	}
+}
+
+func handleDocsUpdate(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		identifier := strParam(req, "identifier")
+		if identifier == "" {
+			return mcp.NewToolResultError("identifier is required (slugId or UUID)"), nil
+		}
+		providerName := strParam(req, "provider")
+
+		input := provider.DocumentUpdateInput{
+			Title:   strPtr(strParam(req, "title")),
+			Content: strPtr(strParam(req, "content")),
+			Icon:    strPtr(strParam(req, "icon")),
+			Color:   strPtr(strParam(req, "color")),
+		}
+
+		doc, err := reg.UpdateDocument(ctx, providerName, identifier, input)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error updating document: %v", err)), nil
+		}
+
+		return mcp.NewToolResultText(fmt.Sprintf("Document updated: **%s**\nSlug: %s | Project: %s",
+			doc.Title, doc.SlugID, doc.Project)), nil
+	}
+}
+
+func handleDocsDelete(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		identifier := strParam(req, "identifier")
+		if identifier == "" {
+			return mcp.NewToolResultError("identifier is required (slugId or UUID)"), nil
+		}
+		providerName := strParam(req, "provider")
+
+		if err := reg.DeleteDocument(ctx, providerName, identifier); err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error deleting document: %v", err)), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Document %s deleted.", identifier)), nil
+	}
+}
+
+func handleDocsSearch(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		query := strParam(req, "query")
+		if query == "" {
+			return mcp.NewToolResultError("query is required"), nil
+		}
+		providerFilter := strParam(req, "provider")
+
+		docs, warnings, err := reg.SearchDocuments(ctx, query, providerFilter)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error: %v", err)), nil
+		}
+
+		var sb strings.Builder
+		for _, w := range warnings {
+			sb.WriteString(fmt.Sprintf("Warning: %s\n", w))
+		}
+		if len(warnings) > 0 {
+			sb.WriteString("\n")
+		}
+
+		if len(docs) == 0 {
+			sb.WriteString(fmt.Sprintf("No documents found matching %q", query))
+			return mcp.NewToolResultText(sb.String()), nil
+		}
+
+		sb.WriteString(fmt.Sprintf("## Document search for %q — %d matches\n\n", query, len(docs)))
+		sb.WriteString("| Slug | Title | Project | Source |\n")
+		sb.WriteString("|---|---|---|---|\n")
+		for _, d := range docs {
+			title := d.Title
+			if len(title) > 60 {
+				title = title[:57] + "..."
+			}
+			project := d.Project
+			if project == "" {
+				project = "-"
+			}
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", d.SlugID, title, project, d.Source))
+		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleTasksStates(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		providerName := strParam(req, "provider")
+		project := strParam(req, "project")
+
+		if providerName == "" || project == "" {
+			return mcp.NewToolResultError("provider and project are required"), nil
+		}
+
+		states, err := reg.States(ctx, providerName, project)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error: %v", err)), nil
+		}
+
+		if len(states) == 0 {
+			return mcp.NewToolResultText("No states found for this project."), nil
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("## Workflow states for %s/%s\n\n", providerName, project))
+		sb.WriteString("| ID | Name | Type |\n")
+		sb.WriteString("|---|---|---|\n")
+		for _, s := range states {
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s |\n", s.ID, s.Name, s.Type))
+		}
+
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}

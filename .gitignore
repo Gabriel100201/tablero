@@ -1,0 +1,30 @@
+# Binaries — only the ones at the repo root from `go build .`
+# (the directory cmd/tablero/ is source code and must NOT be ignored)
+/tablero
+/tablero.exe
+/dist/
+/bin/
+
+# Go build cache / vendor (we use modules, not vendoring)
+/vendor/
+
+# Local config files — never commit credentials
+config.yaml
+config.yml
+config.local.*
+.tablero/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Test coverage
+*.out
+coverage.*
+
+# Logs
+*.log
