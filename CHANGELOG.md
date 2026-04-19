@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Contributor documentation: `CONTRIBUTING.md` (development setup, project layout, commit convention, PR flow, guides for adding tools and providers) and `RELEASING.md` (versioning, pre-release checklist, tag-based release flow, recovery procedure).
 - GitHub issue templates for bug reports and feature requests, plus a pull request template with a contributor checklist.
 - README now links to the contributor and release guides.
+- README Quick start section: three linear steps (install, add workspace, connect to AI agent) designed to get a new user from zero to a working MCP connection in about two minutes.
 
 ## [0.1.0] - 2026-04-19
 

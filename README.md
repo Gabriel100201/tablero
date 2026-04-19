@@ -24,6 +24,62 @@ Tablero (single Go binary)
 - **Graceful degradation** — if one provider is unreachable (VPN down, etc.) the others still work; failures surface as warnings, not hard errors.
 - **Single binary** — one Go executable, zero runtime dependencies.
 
+## Quick start
+
+Three steps. The whole thing takes about two minutes if you already have a Linear API key ready.
+
+### 1. Install the binary
+
+**With Go (simplest — always picks the latest release):**
+
+```bash
+go install github.com/Gabriel100201/tablero/cmd/tablero@latest
+```
+
+Make sure `$(go env GOPATH)/bin` — typically `~/go/bin` on Linux/macOS or `%USERPROFILE%\go\bin` on Windows — is on your `PATH`.
+
+**Without Go:** download the archive for your OS from the [latest release](https://github.com/Gabriel100201/tablero/releases/latest), extract it, and put `tablero` (or `tablero.exe`) somewhere on your `PATH`. Full details and checksum verification in the [Install section](#install).
+
+Verify:
+
+```bash
+tablero version
+```
+
+### 2. Add your first workspace
+
+```bash
+tablero config add linear
+```
+
+You'll be prompted for:
+
+- A friendly name (e.g. `work`) — this is how you'll reference the workspace from agent tools
+- Your Linear API key (input is hidden) — get one at **Linear → Settings → API → Personal API keys → Create key**
+
+Tablero validates the key against Linear before saving. If it's valid, you'll see `✓ Connection OK` and the config is written to `~/.tablero/config.yaml` with mode `0600`.
+
+Repeat `tablero config add linear` for every additional Linear workspace, or `tablero config add taiga` for a Taiga instance. Then verify everything works:
+
+```bash
+tablero config list   # shows all providers with secrets masked
+tablero config test   # pings each provider
+```
+
+### 3. Connect to your AI agent
+
+**Claude Code:**
+
+```bash
+claude mcp add --transport stdio tablero -- tablero mcp
+```
+
+Then reload the MCP connection inside Claude Code — run `/mcp` and reconnect `tablero` (or just restart the session). Claude Code picks up the 13 tools automatically.
+
+**Cursor / Cline / Windsurf / any other MCP client:** add a stdio server with command `tablero` and args `["mcp"]` — see [Register with your AI agent](#register-with-your-ai-agent) for exact JSON snippets.
+
+That's it — ask your agent "what do I have assigned in Linear today?" and it will call `tasks_list assigned=true` on its own.
+
 ## Install
 
 ### Option A — Download a pre-built binary (no Go needed)
