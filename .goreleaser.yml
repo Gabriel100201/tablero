@@ -1,0 +1,83 @@
+version: 2
+project_name: tablero
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: tablero
+    main: ./cmd/tablero
+    binary: tablero
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      # Windows on ARM64 is uncommon and skipping keeps the matrix light.
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+
+archives:
+  - id: tablero
+    ids:
+      - tablero
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+      - config.example.yaml
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "^style:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  draft: false
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"
+  header: |
+    Tablero **v{{.Version}}** — unified MCP task aggregator for Linear and Taiga.
+
+    ## Install
+
+    **Pick the archive for your OS / CPU below**, extract it, and put the `tablero` binary on your `PATH`.
+
+    Or, if you have Go installed:
+
+    ```bash
+    go install github.com/Gabriel100201/tablero/cmd/tablero@v{{.Version}}
+    ```
+  footer: |
+    ---
+
+    Verify your download with `checksums.txt` (SHA-256).

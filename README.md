@@ -1,5 +1,9 @@
 # Tablero
 
+[![release](https://img.shields.io/github/v/release/Gabriel100201/tablero?logo=github)](https://github.com/Gabriel100201/tablero/releases/latest)
+[![ci](https://github.com/Gabriel100201/tablero/actions/workflows/ci.yml/badge.svg)](https://github.com/Gabriel100201/tablero/actions/workflows/ci.yml)
+[![license](https://img.shields.io/github/license/Gabriel100201/tablero)](./LICENSE)
+
 Unified task aggregator for AI coding agents. One MCP server that connects **Linear** and **Taiga** so you can list, search, create, update, and read tasks — and Linear documents — across all your workspaces without leaving the terminal.
 
 ```
@@ -22,24 +26,35 @@ Tablero (single Go binary)
 
 ## Install
 
-### macOS / Linux
+### Option A — Download a pre-built binary (no Go needed)
+
+Grab the archive for your OS and architecture from the [**latest release**](https://github.com/Gabriel100201/tablero/releases/latest):
+
+- `tablero_<version>_linux_amd64.tar.gz`
+- `tablero_<version>_linux_arm64.tar.gz`
+- `tablero_<version>_darwin_amd64.tar.gz` — macOS Intel
+- `tablero_<version>_darwin_arm64.tar.gz` — macOS Apple Silicon
+- `tablero_<version>_windows_amd64.zip`
+
+Extract the `tablero` (or `tablero.exe`) binary and put it somewhere on your `PATH`.
+
+```bash
+# example for Linux amd64
+curl -sL https://github.com/Gabriel100201/tablero/releases/latest/download/tablero_<version>_linux_amd64.tar.gz | tar -xz
+sudo mv tablero /usr/local/bin/
+```
+
+Each release also ships `checksums.txt` (SHA-256) so you can verify the download.
+
+### Option B — `go install`
 
 ```bash
 go install github.com/Gabriel100201/tablero/cmd/tablero@latest
 ```
 
-Make sure `$(go env GOPATH)/bin` (typically `~/go/bin`) is on your `PATH`.
+The binary lands in `$(go env GOPATH)/bin` (typically `~/go/bin` on Unix, `%USERPROFILE%\go\bin` on Windows). Make sure that directory is on your `PATH`.
 
-### Windows
-
-```powershell
-go install github.com/Gabriel100201/tablero/cmd/tablero@latest
-# Binary goes to %USERPROFILE%\go\bin\tablero.exe
-```
-
-Ensure `%USERPROFILE%\go\bin` is on your `PATH`.
-
-### Build from source
+### Option C — Build from source
 
 ```bash
 git clone https://github.com/Gabriel100201/tablero.git
