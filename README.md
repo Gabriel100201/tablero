@@ -224,6 +224,10 @@ Never commit your config to a public repository. This repo's `.gitignore` exclud
 - **Go 1.25+** to build from source (the CLI depends on `golang.org/x/term` for hidden password prompts)
 - No runtime dependencies
 
+## Contributing
+
+Bug reports, feature requests, and pull requests are welcome. See [`CONTRIBUTING.md`](./CONTRIBUTING.md) for the development setup, commit convention, and PR flow. Maintainers cutting a release should follow [`RELEASING.md`](./RELEASING.md).
+
 ## License
 
 [MIT](./LICENSE)
