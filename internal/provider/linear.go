@@ -318,19 +318,18 @@ func (l *linearProvider) SearchTasks(ctx context.Context, query string) ([]Task,
 }
 
 func (l *linearProvider) ListProjects(ctx context.Context) ([]Project, error) {
+	// Two top-level queries keep GraphQL complexity well under Linear's 10k ceiling.
+	// A nested teams.projects(first: 100) explodes to ~60k complexity, which the API rejects.
 	query := `{
-		teams(first: 100) {
+		teams(first: 100) { nodes { id name key } }
+		projects(first: 100) {
 			nodes {
-				id name key
-				projects(first: 100) {
-					nodes {
-						id name description
-						state priority priorityLabel
-						health url
-						startDate targetDate progress
-						lead { name displayName }
-					}
-				}
+				id name description
+				state priority priorityLabel
+				health url
+				startDate targetDate progress
+				lead { name displayName }
+				teams(first: 1) { nodes { id name key } }
 			}
 		}
 	}`
@@ -339,14 +338,14 @@ func (l *linearProvider) ListProjects(ctx context.Context) ([]Project, error) {
 		Data struct {
 			Teams struct {
 				Nodes []struct {
-					ID       string `json:"id"`
-					Name     string `json:"name"`
-					Key      string `json:"key"`
-					Projects struct {
-						Nodes []linearProject `json:"nodes"`
-					} `json:"projects"`
+					ID   string `json:"id"`
+					Name string `json:"name"`
+					Key  string `json:"key"`
 				} `json:"nodes"`
 			} `json:"teams"`
+			Projects struct {
+				Nodes []linearProject `json:"nodes"`
+			} `json:"projects"`
 		} `json:"data"`
 	}
 
@@ -354,7 +353,6 @@ func (l *linearProvider) ListProjects(ctx context.Context) ([]Project, error) {
 		return nil, err
 	}
 
-	seenProjects := make(map[string]bool) // projects can appear under multiple teams
 	var projects []Project
 	for _, t := range resp.Data.Teams.Nodes {
 		projects = append(projects, Project{
@@ -365,13 +363,13 @@ func (l *linearProvider) ListProjects(ctx context.Context) ([]Project, error) {
 			Key:        t.Key,
 			Kind:       "team",
 		})
-		for _, p := range t.Projects.Nodes {
-			if seenProjects[p.ID] {
-				continue
-			}
-			seenProjects[p.ID] = true
-			projects = append(projects, p.toProject(l.name, t.Name))
+	}
+	for _, p := range resp.Data.Projects.Nodes {
+		parentTeam := ""
+		if len(p.Teams.Nodes) > 0 {
+			parentTeam = p.Teams.Nodes[0].Name
 		}
+		projects = append(projects, p.toProject(l.name, parentTeam))
 	}
 	return projects, nil
 }
@@ -664,6 +662,13 @@ type linearProject struct {
 		Name        string `json:"name"`
 		DisplayName string `json:"displayName"`
 	} `json:"lead"`
+	Teams struct {
+		Nodes []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			Key  string `json:"key"`
+		} `json:"nodes"`
+	} `json:"teams"`
 }
 
 func (p *linearProject) toProject(source, parentTeam string) Project {
