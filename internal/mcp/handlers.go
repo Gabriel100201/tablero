@@ -134,6 +134,19 @@ func handleTasksGet(reg *provider.Registry) func(ctx context.Context, req mcp.Ca
 			sb.WriteString(fmt.Sprintf("\n## Description\n\n%s\n", detail.Description))
 		}
 
+		if len(detail.Subtasks) > 0 {
+			sb.WriteString(fmt.Sprintf("\n## Subtasks (%d)\n\n", len(detail.Subtasks)))
+			sb.WriteString("| ID | Title | Status | Assignee |\n")
+			sb.WriteString("|---|---|---|---|\n")
+			for _, st := range detail.Subtasks {
+				assignee := st.Assignee
+				if assignee == "" {
+					assignee = "unassigned"
+				}
+				sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", st.Identifier, st.Title, st.Status, assignee))
+			}
+		}
+
 		if len(detail.Comments) > 0 {
 			sb.WriteString(fmt.Sprintf("\n## Comments (%d)\n\n", len(detail.Comments)))
 			for _, c := range detail.Comments {

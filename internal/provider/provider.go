@@ -18,6 +18,7 @@ type Task struct {
 	StatusType string // backlog, unstarted, started, completed, canceled
 	Priority   string // Urgent, High, Medium, Low, None
 	Project    string
+	Assignee   string // display name of the assignee, empty if unassigned
 	DueDate    string // ISO 8601 or empty
 	URL        string
 	CreatedAt  string
@@ -33,6 +34,7 @@ type TaskDetail struct {
 	Assignee    string
 	Estimate    *float64
 	Milestone   string // cycle for Linear, sprint for Taiga
+	Subtasks    []Task // child tasks (Taiga: tasks belonging to a user story)
 }
 
 type Comment struct {

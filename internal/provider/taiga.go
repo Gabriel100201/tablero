@@ -96,6 +96,15 @@ func (t *taigaProvider) GetTask(ctx context.Context, identifier string) (*TaskDe
 		}
 		detail := story.toTaskDetail(t.name)
 
+		// Fetch child tasks belonging to this user story (open and closed)
+		tasksURL := fmt.Sprintf("%s/api/v1/tasks?user_story=%d", t.baseURL, id)
+		var childTasks []taigaTask
+		if err := t.get(ctx, tasksURL, &childTasks); err == nil {
+			for _, ct := range childTasks {
+				detail.Subtasks = append(detail.Subtasks, ct.toTask(t.name))
+			}
+		}
+
 		// Fetch comments
 		commentsURL := fmt.Sprintf("%s/api/v1/history/userstory/%d", t.baseURL, id)
 		comments, _ := t.fetchComments(ctx, commentsURL)
@@ -647,6 +656,10 @@ func (s *taigaUserStory) toTask(source string) Task {
 	if s.StatusExtra.IsClosed {
 		statusType = "completed"
 	}
+	assignee := ""
+	if s.AssignedToExtra != nil {
+		assignee = s.AssignedToExtra.FullName
+	}
 	return Task{
 		Source:     source,
 		SourceType: "taiga",
@@ -656,6 +669,7 @@ func (s *taigaUserStory) toTask(source string) Task {
 		StatusType: statusType,
 		Priority:   "", // Taiga US don't have priority by default
 		Project:    s.ProjectExtra.Name,
+		Assignee:   assignee,
 		DueDate:    due,
 		URL:        "", // Taiga URLs are project-dependent
 		CreatedAt:  s.CreatedDate,
@@ -699,6 +713,10 @@ func (tk *taigaTask) toTask(source string) Task {
 	if tk.StatusExtra.IsClosed {
 		statusType = "completed"
 	}
+	assignee := ""
+	if tk.AssignedToExtra != nil {
+		assignee = tk.AssignedToExtra.FullName
+	}
 	return Task{
 		Source:     source,
 		SourceType: "taiga",
@@ -708,6 +726,7 @@ func (tk *taigaTask) toTask(source string) Task {
 		StatusType: statusType,
 		Priority:   "",
 		Project:    tk.ProjectExtra.Name,
+		Assignee:   assignee,
 		DueDate:    due,
 		URL:        "",
 		CreatedAt:  tk.CreatedDate,
