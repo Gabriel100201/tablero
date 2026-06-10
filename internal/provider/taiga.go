@@ -37,6 +37,10 @@ func NewTaiga(name, baseURL, username, password string) Provider {
 func (t *taigaProvider) Name() string { return t.name }
 func (t *taigaProvider) Type() string { return "taiga" }
 
+func (t *taigaProvider) Ping(ctx context.Context) error {
+	return t.ensureAuth(ctx)
+}
+
 func (t *taigaProvider) ListTasks(ctx context.Context, opts ListOpts) ([]Task, error) {
 	if err := t.ensureAuth(ctx); err != nil {
 		return nil, err

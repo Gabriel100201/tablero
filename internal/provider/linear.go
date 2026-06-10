@@ -29,6 +29,23 @@ func NewLinear(name, apiKey string) Provider {
 func (l *linearProvider) Name() string { return l.name }
 func (l *linearProvider) Type() string { return "linear" }
 
+func (l *linearProvider) Ping(ctx context.Context) error {
+	var resp struct {
+		Data struct {
+			Viewer struct {
+				ID string `json:"id"`
+			} `json:"viewer"`
+		} `json:"data"`
+	}
+	if err := l.graphql(ctx, `{ viewer { id } }`, nil, &resp); err != nil {
+		return err
+	}
+	if resp.Data.Viewer.ID == "" {
+		return fmt.Errorf("viewer id empty — token may be invalid")
+	}
+	return nil
+}
+
 func (l *linearProvider) ListTasks(ctx context.Context, opts ListOpts) ([]Task, error) {
 	filter := map[string]any{"state": buildStateFilter(opts.State)}
 
