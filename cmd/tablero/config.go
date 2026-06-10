@@ -235,9 +235,7 @@ func validateProvider(pc config.ProviderConfig) error {
 		return fmt.Errorf("unknown type %q", pc.Type)
 	}
 
-	// ListProjects is a cheap authenticated call that works on both providers.
-	_, err := p.ListProjects(ctx)
-	return err
+	return p.Ping(ctx)
 }
 
 // promptRequired keeps asking until non-empty input is given and passes validate().

@@ -143,6 +143,8 @@ type DocumentUpdateInput struct {
 type Provider interface {
 	Name() string
 	Type() string
+	// Ping verifies the connection with a minimal API call (no heavy queries).
+	Ping(ctx context.Context) error
 	ListTasks(ctx context.Context, opts ListOpts) ([]Task, error)
 	GetTask(ctx context.Context, identifier string) (*TaskDetail, error)
 	CreateTask(ctx context.Context, input CreateInput) (*Task, error)
