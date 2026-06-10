@@ -33,3 +33,44 @@ jobs:
 
       - name: go build
         run: go build ./...
+
+  publish-edge:
+    name: Publish edge release
+    needs: [build]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: Build snapshot binaries
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --snapshot --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update edge pre-release
+        run: |
+          gh release delete edge --yes 2>/dev/null || true
+          gh release create edge \
+            dist/tablero_*_linux_amd64.tar.gz \
+            dist/tablero_*_linux_arm64.tar.gz \
+            dist/tablero_*_darwin_amd64.tar.gz \
+            dist/tablero_*_darwin_arm64.tar.gz \
+            dist/tablero_*_windows_amd64.zip \
+            dist/checksums.txt \
+            --prerelease \
+            --title "edge (latest main)" \
+            --notes "Automated build from the latest commit on \`main\`. Updates on every push to main. Not a stable release — use a tagged release for production."
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
