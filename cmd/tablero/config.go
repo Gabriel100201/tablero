@@ -23,7 +23,7 @@ func cmdConfig(args []string) {
 		cmdConfigInit()
 	case "add":
 		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "usage: tablero config add <linear|taiga>")
+			fmt.Fprintln(os.Stderr, "usage: tablero config add <linear|taiga|openproject>")
 			os.Exit(1)
 		}
 		cmdConfigAdd(args[1])
@@ -59,6 +59,7 @@ USAGE
   tablero config init              Create an empty config file (if one doesn't exist)
   tablero config add linear        Add a Linear workspace (prompts for name + API key)
   tablero config add taiga         Add a Taiga instance (prompts for URL + credentials)
+  tablero config add openproject   Add an OpenProject instance (prompts for URL + API key)
   tablero config list              List configured providers (secrets masked)
   tablero config remove <name>     Remove a provider by name
   tablero config test [name]       Verify connectivity to all (or a single) provider
@@ -90,8 +91,8 @@ func cmdConfigInit() {
 
 func cmdConfigAdd(kind string) {
 	kind = strings.ToLower(kind)
-	if kind != "linear" && kind != "taiga" {
-		fatalf("add: unknown provider type %q (expected 'linear' or 'taiga')", kind)
+	if kind != "linear" && kind != "taiga" && kind != "openproject" {
+		fatalf("add: unknown provider type %q (expected 'linear', 'taiga' or 'openproject')", kind)
 	}
 
 	cfg, err := config.LoadOrEmpty()
@@ -120,6 +121,9 @@ func cmdConfigAdd(kind string) {
 		pc.URL = promptRequired(reader, "Taiga base URL (e.g. https://tree.taiga.io)", nil)
 		pc.Username = promptRequired(reader, "Taiga username", nil)
 		pc.Password = promptSecret("Taiga password")
+	case "openproject":
+		pc.URL = promptRequired(reader, "OpenProject base URL (e.g. https://openproject.example.com)", nil)
+		pc.APIKey = promptSecret("OpenProject API key (My account > Access tokens > API)")
 	}
 
 	fmt.Println("\nValidating connection…")
@@ -163,6 +167,8 @@ func cmdConfigList() {
 			detail = "API key: " + maskSecret(p.APIKey)
 		case "taiga":
 			detail = fmt.Sprintf("%s (user: %s, pass: %s)", p.URL, p.Username, maskSecret(p.Password))
+		case "openproject":
+			detail = fmt.Sprintf("%s (API key: %s)", p.URL, maskSecret(p.APIKey))
 		}
 		fmt.Printf("%-24s %-8s %s\n", p.Name, p.Type, detail)
 	}
@@ -231,6 +237,8 @@ func validateProvider(pc config.ProviderConfig) error {
 		p = provider.NewLinear(pc.Name, pc.APIKey)
 	case "taiga":
 		p = provider.NewTaiga(pc.Name, pc.URL, pc.Username, pc.Password)
+	case "openproject":
+		p = provider.NewOpenProject(pc.Name, pc.URL, pc.APIKey)
 	default:
 		return fmt.Errorf("unknown type %q", pc.Type)
 	}

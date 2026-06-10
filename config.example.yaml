@@ -29,3 +29,10 @@ providers:
     url: "https://tree.taiga.io"
     username: "another-user"
     password: "another-password"
+
+  # Example: an OpenProject instance (self-hosted or cloud)
+  # Auth uses an API token (My account > Access tokens > API).
+  - name: my-openproject
+    type: openproject
+    url: "https://openproject.example.com"
+    api_key: "opapi-XXXXXXXXXXXXXXXXXXXXXXXX"
