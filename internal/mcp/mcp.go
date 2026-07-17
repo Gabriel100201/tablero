@@ -6,7 +6,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-const serverInstructions = `Tablero is a unified task aggregator across Linear and Taiga.
+const serverInstructions = `Tablero is a unified task aggregator across Linear, Taiga and OpenProject.
 
 TOOLS:
   tasks_list     — list open tasks across all providers (filter by provider/project/state/assigned)
@@ -27,6 +27,7 @@ IDENTIFIER FORMAT:
   Linear: use the issue key (e.g. ABC-42)
   Taiga user stories: <providerName>:us:<id> (e.g. work:us:234)
   Taiga tasks: <providerName>:task:<id> (e.g. work:task:56)
+  OpenProject work packages: <providerName>:wp:<id> (e.g. work:wp:1234)
 
 PROJECT MODEL:
   Linear has two levels: Teams (e.g. team name "Acme" with key ACME) and Projects inside
@@ -59,7 +60,7 @@ func registerTools(srv *server.MCPServer, reg *provider.Registry) {
 	// ─── tasks_list ──────────────────────────────────────────────────────
 	srv.AddTool(
 		mcp.NewTool("tasks_list",
-			mcp.WithDescription("List open tasks across all connected project management tools (Linear, Taiga). Returns tasks grouped by provider with status, priority, and due date. Defaults to ALL open tasks in the workspace — set assigned=true to see only tasks assigned to you."),
+			mcp.WithDescription("List open tasks across all connected project management tools (Linear, Taiga, OpenProject). Returns tasks grouped by provider with status, priority, and due date. Defaults to ALL open tasks in the workspace — set assigned=true to see only tasks assigned to you."),
 			mcp.WithTitleAnnotation("List Tasks"),
 			mcp.WithReadOnlyHintAnnotation(true),
 			mcp.WithDestructiveHintAnnotation(false),

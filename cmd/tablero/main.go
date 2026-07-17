@@ -48,6 +48,8 @@ func cmdMCP() {
 			providers = append(providers, provider.NewLinear(pc.Name, pc.APIKey))
 		case "taiga":
 			providers = append(providers, provider.NewTaiga(pc.Name, pc.URL, pc.Username, pc.Password))
+		case "openproject":
+			providers = append(providers, provider.NewOpenProject(pc.Name, pc.URL, pc.APIKey))
 		}
 	}
 
@@ -60,7 +62,7 @@ func cmdMCP() {
 }
 
 func printUsage() {
-	fmt.Println(`tablero — Unified task aggregator for Linear & Taiga (MCP server)
+	fmt.Println(`tablero — Unified task aggregator for Linear, Taiga & OpenProject (MCP server)
 
 USAGE
   tablero mcp                 Start the MCP server (stdio transport)
@@ -69,8 +71,9 @@ USAGE
   tablero help                Show this help
 
 QUICK START
-  tablero config add linear   Interactive prompt to add a Linear workspace
-  tablero config add taiga    Interactive prompt to add a Taiga instance
+  tablero config add linear      Interactive prompt to add a Linear workspace
+  tablero config add taiga       Interactive prompt to add a Taiga instance
+  tablero config add openproject Interactive prompt to add an OpenProject instance
   tablero config test         Verify every configured provider responds
   tablero mcp                 Launch the MCP server for your AI agent
 

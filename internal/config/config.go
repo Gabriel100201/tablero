@@ -14,9 +14,9 @@ type Config struct {
 
 type ProviderConfig struct {
 	Name     string `yaml:"name"`
-	Type     string `yaml:"type"`     // "linear" or "taiga"
-	APIKey   string `yaml:"api_key"`  // Linear
-	URL      string `yaml:"url"`      // Taiga base URL
+	Type     string `yaml:"type"`     // "linear", "taiga" or "openproject"
+	APIKey   string `yaml:"api_key"`  // Linear, OpenProject
+	URL      string `yaml:"url"`      // Taiga, OpenProject base URL
 	Username string `yaml:"username"` // Taiga
 	Password string `yaml:"password"` // Taiga
 }
@@ -140,8 +140,15 @@ func (c *Config) validate() error {
 			if p.Username == "" || p.Password == "" {
 				return fmt.Errorf("provider %q (taiga): username and password are required", p.Name)
 			}
+		case "openproject":
+			if p.URL == "" {
+				return fmt.Errorf("provider %q (openproject): url is required", p.Name)
+			}
+			if p.APIKey == "" {
+				return fmt.Errorf("provider %q (openproject): api_key is required", p.Name)
+			}
 		default:
-			return fmt.Errorf("provider %q: unknown type %q (must be 'linear' or 'taiga')", p.Name, p.Type)
+			return fmt.Errorf("provider %q: unknown type %q (must be 'linear', 'taiga' or 'openproject')", p.Name, p.Type)
 		}
 	}
 	return nil

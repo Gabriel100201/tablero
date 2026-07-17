@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- OpenProject provider (`type: openproject`): task aggregation over the OpenProject REST API v3 with API-token (Basic auth) authentication. Supports `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_search`, `tasks_projects`, and `tasks_states`. Work packages are addressed as `<provider>:wp:<id>`. Documents are not supported. Add one with `tablero config add openproject`.
 - Contributor documentation: `CONTRIBUTING.md` (development setup, project layout, commit convention, PR flow, guides for adding tools and providers) and `RELEASING.md` (versioning, pre-release checklist, tag-based release flow, recovery procedure).
 - GitHub issue templates for bug reports and feature requests, plus a pull request template with a contributor checklist.
 - README now links to the contributor and release guides.

@@ -23,6 +23,10 @@ This document describes where Tablero is headed. It is a living document — pri
 - Fixed Linear connection validation exceeding the API complexity limit on large workspaces ([#1](https://github.com/Gabriel100201/tablero/pull/1))
 - Added `Ping` method to the `Provider` interface for lightweight credential checks
 
+### Unreleased
+
+- **OpenProject provider** ([#4](https://github.com/Gabriel100201/tablero/issues/4)) — task aggregation over the OpenProject REST API v3 with API-token authentication. Work packages addressed as `<provider>:wp:<id>`; documents not supported.
+
 ---
 
 ## What's next
@@ -52,9 +56,6 @@ Tablero's provider interface is designed to make new integrations straightforwar
 
 **[#5](https://github.com/Gabriel100201/tablero/issues/5) — Jira**
 The most requested provider. Targets Jira Cloud first via the REST API v3. Jira's `PROJ-123` key format maps naturally to Tablero's existing identifier conventions.
-
-**[#4](https://github.com/Gabriel100201/tablero/issues/4) — OpenProject**
-Popular self-hosted alternative to Jira. Targets OpenProject v3 API with API key authentication.
 
 **GitHub Issues** *(not yet filed)*
 For teams that use GitHub as their primary issue tracker. Would also enable cross-referencing between code and tasks within the same tool.

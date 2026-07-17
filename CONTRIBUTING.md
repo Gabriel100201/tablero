@@ -16,7 +16,7 @@ Thanks for considering a contribution! This guide covers everything you need to 
 
 ## Scope and philosophy
 
-Tablero is a **single-binary MCP server** that aggregates tasks (and Linear documents) across Linear and Taiga. We optimize for:
+Tablero is a **single-binary MCP server** that aggregates tasks (and Linear documents) across Linear, Taiga and OpenProject. We optimize for:
 
 - **Zero runtime dependencies.** No Python sidecar, no database, no Docker.
 - **Friendly first run.** The CLI should prompt a newcomer through setup in under 2 minutes.
@@ -66,7 +66,7 @@ tablero/
 ├── internal/
 │   ├── config/             # YAML config loading, validation, CLI-driven mutation
 │   ├── mcp/                # MCP server: tool registration (mcp.go) and handlers (handlers.go)
-│   └── provider/           # Provider interface + Linear and Taiga implementations
+│   └── provider/           # Provider interface + Linear, Taiga and OpenProject implementations
 │       ├── provider.go     # Shared types, Provider interface, Registry
 │       ├── linear.go       # Linear GraphQL implementation
 │       └── taiga.go        # Taiga REST implementation

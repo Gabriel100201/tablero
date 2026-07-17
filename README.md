@@ -4,7 +4,7 @@
 [![ci](https://github.com/Gabriel100201/tablero/actions/workflows/ci.yml/badge.svg)](https://github.com/Gabriel100201/tablero/actions/workflows/ci.yml)
 [![license](https://img.shields.io/github/license/Gabriel100201/tablero)](./LICENSE)
 
-Unified task aggregator for AI coding agents. One MCP server that connects **Linear** and **Taiga** so you can list, search, create, update, and read tasks — and Linear documents — across all your workspaces without leaving the terminal.
+Unified task aggregator for AI coding agents. One MCP server that connects **Linear**, **Taiga** and **OpenProject** so you can list, search, create, update, and read tasks — and Linear documents — across all your workspaces without leaving the terminal.
 
 ```
 Agent (Claude Code / Cursor / Cline / OpenCode / any MCP client)
@@ -13,14 +13,15 @@ Tablero (single Go binary)
     |
     +---> Linear GraphQL API (any number of workspaces)
     +---> Taiga REST API (any number of instances, self-hosted or cloud)
+    +---> OpenProject REST API v3 (any number of instances, self-hosted or cloud)
 ```
 
 ## Features
 
-- **Tasks across workspaces** — list, get, create, update, search issues from multiple Linear workspaces and Taiga instances at once.
+- **Tasks across workspaces** — list, get, create, update, search issues from multiple Linear workspaces, Taiga instances, and OpenProject instances at once.
 - **Linear documents CRUD** — read and write Linear docs (markdown) from your agent.
 - **Team vs Project aware** — Linear's two-level hierarchy (teams + projects) is exposed correctly; filter tasks or docs by either.
-- **Interactive CLI** — `tablero config add linear` / `add taiga` walks you through setup, validates the connection, and writes the config for you.
+- **Interactive CLI** — `tablero config add linear` / `add taiga` / `add openproject` walks you through setup, validates the connection, and writes the config for you.
 - **Graceful degradation** — if one provider is unreachable (VPN down, etc.) the others still work; failures surface as warnings, not hard errors.
 - **Single binary** — one Go executable, zero runtime dependencies.
 
@@ -136,6 +137,9 @@ tablero config add linear
 # Add a Taiga instance (prompts for URL + username + password; validates via auth)
 tablero config add taiga
 
+# Add an OpenProject instance (prompts for URL + API key; validates via /users/me)
+tablero config add openproject
+
 # Add as many as you want — e.g. multiple Linear workspaces for work and personal
 tablero config add linear
 
@@ -173,14 +177,19 @@ providers:
     url: "https://taiga.example.com"
     username: "myuser"
     password: "mypassword"
+
+  - name: my-openproject
+    type: openproject
+    url: "https://openproject.example.com"
+    api_key: "opapi-..."
 ```
 
 | Field | Required for | Description |
 |-------|-------------|-------------|
 | `name` | all | Unique identifier — an arbitrary label you choose |
-| `type` | all | `linear` or `taiga` |
-| `api_key` | linear | Personal API key (Linear → Settings → API → Personal API keys) |
-| `url` | taiga | Base URL of the Taiga instance |
+| `type` | all | `linear`, `taiga` or `openproject` |
+| `api_key` | linear, openproject | Linear personal API key, or OpenProject API token (My account → Access tokens → API) |
+| `url` | taiga, openproject | Base URL of the Taiga / OpenProject instance |
 | `username` | taiga | Taiga username |
 | `password` | taiga | Taiga password |
 
@@ -229,7 +238,7 @@ Tablero uses **stdio** transport. Configure with:
 | `tasks_create` | — | Create a task in a specific provider/project |
 | `tasks_update` | — | Update status, title, priority, description |
 | `tasks_search` | ✓ | Keyword search across titles and descriptions |
-| `tasks_projects` | ✓ | List all teams and projects (Linear exposes both; Taiga only projects) |
+| `tasks_projects` | ✓ | List all teams and projects (Linear exposes both; Taiga and OpenProject only projects) |
 | `tasks_states` | ✓ | List valid workflow states for a project (use before `tasks_update`) |
 
 ### Documents (Linear only)
@@ -249,6 +258,7 @@ Tablero uses **stdio** transport. Configure with:
 - **Linear docs:** slugId (from URL) or UUID
 - **Taiga user stories:** `<providerName>:us:<id>`, e.g. `work:us:234`
 - **Taiga tasks:** `<providerName>:task:<id>`, e.g. `work:task:56`
+- **OpenProject work packages:** `<providerName>:wp:<id>`, e.g. `work:wp:1234`
 
 ### Project model (Linear)
 
@@ -258,6 +268,12 @@ Linear has two levels:
 - **Project** — e.g. `"Website Redesign"`, a logical grouping of issues inside a team
 
 `tasks_projects` lists both, and the `Kind` column tells them apart. The `project` filter on `tasks_list` and `docs_list` matches either level — pass a team name/key to see everything in a team, or a project name to narrow down.
+
+### OpenProject notes
+
+- Tasks map to **work packages**; `tasks_create` defaults to the `Task` type (or the project's first type if none is named `Task`).
+- Workflow statuses are defined **instance-wide** in OpenProject, so `tasks_states` returns the same set regardless of which project you pass.
+- Documents are not supported (the `docs_*` tools apply to Linear only).
 
 ## Graceful degradation
 
