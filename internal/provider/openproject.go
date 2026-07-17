@@ -79,9 +79,14 @@ func (o *openProjectProvider) ListTasks(ctx context.Context, opts ListOpts) ([]T
 	var tasks []Task
 	offset := 1 // OpenProject pages are 1-based
 	for page := 0; page < maxPages; page++ {
-		filtersJSON, _ := json.Marshal(filters)
-		u := fmt.Sprintf("%s/api/v3/work_packages?offset=%d&pageSize=%d&filters=%s",
-			o.baseURL, offset, pageSize, url.QueryEscape(string(filtersJSON)))
+		u := fmt.Sprintf("%s/api/v3/work_packages?offset=%d&pageSize=%d",
+			o.baseURL, offset, pageSize)
+		// Only send `filters` when non-empty: a nil/empty slice marshals to
+		// `null`, and OpenProject returns HTTP 500 on filters=null.
+		if len(filters) > 0 {
+			filtersJSON, _ := json.Marshal(filters)
+			u += "&filters=" + url.QueryEscape(string(filtersJSON))
+		}
 
 		var coll struct {
 			Total    int `json:"total"`
