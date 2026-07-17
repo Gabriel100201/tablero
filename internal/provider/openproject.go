@@ -256,26 +256,37 @@ func (o *openProjectProvider) SearchTasks(ctx context.Context, query string) ([]
 }
 
 func (o *openProjectProvider) ListProjects(ctx context.Context) ([]Project, error) {
-	u := fmt.Sprintf("%s/api/v3/projects?pageSize=100", o.baseURL)
-	var coll struct {
-		Embedded struct {
-			Elements []opProject `json:"elements"`
-		} `json:"_embedded"`
-	}
-	if err := o.get(ctx, u, &coll); err != nil {
-		return nil, err
-	}
+	const pageSize = 100
+	const maxPages = 10 // hard cap: 1000 projects
 	var result []Project
-	for _, p := range coll.Embedded.Elements {
-		result = append(result, Project{
-			Source:     o.name,
-			SourceType: "openproject",
-			ID:         strconv.Itoa(p.ID),
-			Name:       p.Name,
-			Key:        p.Identifier,
-			Kind:       "project",
-			URL:        fmt.Sprintf("%s/projects/%s", o.baseURL, p.Identifier),
-		})
+	offset := 1 // OpenProject pages are 1-based
+	for page := 0; page < maxPages; page++ {
+		u := fmt.Sprintf("%s/api/v3/projects?offset=%d&pageSize=%d", o.baseURL, offset, pageSize)
+		var coll struct {
+			Total    int `json:"total"`
+			Count    int `json:"count"`
+			Embedded struct {
+				Elements []opProject `json:"elements"`
+			} `json:"_embedded"`
+		}
+		if err := o.get(ctx, u, &coll); err != nil {
+			return nil, err
+		}
+		for _, p := range coll.Embedded.Elements {
+			result = append(result, Project{
+				Source:     o.name,
+				SourceType: "openproject",
+				ID:         strconv.Itoa(p.ID),
+				Name:       p.Name,
+				Key:        p.Identifier,
+				Kind:       "project",
+				URL:        fmt.Sprintf("%s/projects/%s", o.baseURL, p.Identifier),
+			})
+		}
+		if len(result) >= coll.Total || coll.Count == 0 {
+			break
+		}
+		offset++
 	}
 	return result, nil
 }
