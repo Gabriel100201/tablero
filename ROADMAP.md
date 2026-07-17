@@ -23,7 +23,7 @@ This document describes where Tablero is headed. It is a living document — pri
 - Fixed Linear connection validation exceeding the API complexity limit on large workspaces ([#1](https://github.com/Gabriel100201/tablero/pull/1))
 - Added `Ping` method to the `Provider` interface for lightweight credential checks
 
-### Unreleased
+### v0.2.0 *(July 2026)*
 
 - **OpenProject provider** ([#4](https://github.com/Gabriel100201/tablero/issues/4)) — task aggregation over the OpenProject REST API v3 with API-token authentication. Work packages addressed as `<provider>:wp:<id>`; documents not supported.
 
