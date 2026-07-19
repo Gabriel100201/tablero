@@ -71,6 +71,14 @@ type State struct {
 	Project string
 }
 
+// Member is an assignable user in a provider.
+type Member struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+	Email       string `json:"email"`
+}
+
 type ListOpts struct {
 	Provider string
 	Project  string
@@ -86,13 +94,34 @@ type CreateInput struct {
 	Priority    string
 	StateID     string
 	Type        string // taiga: "userstory" or "task"
+
+	// Rich fields (Linear only; Taiga ignores these). Empty = not set.
+	// Strings accept a human name OR a UUID.
+	Assignee string   // user name/email/UUID, or "me"
+	Labels   []string // label names
+	DueDate  string   // ISO 8601 date (YYYY-MM-DD)
+	Estimate *float64 // point estimate
+	Cycle    string   // cycle name/number/UUID, or "active"
+	Parent   string   // parent issue identifier (e.g. ABC-42)
 }
 
 type UpdateInput struct {
 	Title       *string
 	Description *string
-	StateID     *string
+	StateID     *string // back-compat: Linear workflow state UUID passed directly
 	Priority    *string
+
+	// Rich edits (Linear only; Taiga ignores these). A nil pointer means "leave
+	// unchanged". String fields accept a human name OR a UUID; the literal "none"
+	// (or "") clears/unassigns the field where that makes sense.
+	State    *string   // state name or UUID (preferred over StateID)
+	Assignee *string   // user name/email/UUID, "me", or "none" to unassign
+	Project  *string   // project name or UUID, "none" to remove from project
+	Labels   *[]string // label names; replaces the whole label set
+	DueDate  *string   // ISO 8601 date (YYYY-MM-DD), "none" to clear
+	Estimate *float64  // point estimate
+	Cycle    *string   // cycle name/number/UUID, "active", or "none" to clear
+	Parent   *string   // parent issue identifier (e.g. ABC-42), "none" to detach
 }
 
 // Document is the unified representation of a Linear document.
@@ -153,6 +182,13 @@ type Provider interface {
 	ListProjects(ctx context.Context) ([]Project, error)
 	ListStates(ctx context.Context, projectKey string) ([]State, error)
 
+	// AddComment posts a comment on a task. Providers that don't support it
+	// return ErrNotSupported.
+	AddComment(ctx context.Context, identifier, body string) (*Comment, error)
+	// ListMembers lists assignable users. projectKey is an optional scope hint.
+	// Providers that don't support it return ErrNotSupported.
+	ListMembers(ctx context.Context, projectKey string) ([]Member, error)
+
 	// Documents (Linear only; Taiga returns ErrDocsNotSupported).
 	ListDocuments(ctx context.Context, opts DocumentListOpts) ([]Document, error)
 	GetDocument(ctx context.Context, identifier string) (*DocumentDetail, error)
@@ -164,6 +200,10 @@ type Provider interface {
 
 // ErrDocsNotSupported is returned by providers that do not expose document APIs (e.g. Taiga).
 var ErrDocsNotSupported = fmt.Errorf("documents are not supported by this provider")
+
+// ErrNotSupported is returned by providers that do not implement an optional
+// capability (e.g. Taiga for comments/members in the current version).
+var ErrNotSupported = fmt.Errorf("not supported by this provider")
 
 // Registry holds all providers and provides aggregate methods.
 type Registry struct {
@@ -270,6 +310,28 @@ func (r *Registry) UpdateTask(ctx context.Context, identifier string, input Upda
 	pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	return p.UpdateTask(pctx, localID, input)
+}
+
+// AddComment routes to the correct provider based on identifier and posts a comment.
+func (r *Registry) AddComment(ctx context.Context, identifier, body string) (*Comment, error) {
+	p, localID := r.routeIdentifier(identifier)
+	if p == nil {
+		return nil, fmt.Errorf("cannot route identifier %q to any provider", identifier)
+	}
+	pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return p.AddComment(pctx, localID, body)
+}
+
+// ListMembers lists assignable users for a named provider.
+func (r *Registry) ListMembers(ctx context.Context, providerName, projectKey string) ([]Member, error) {
+	p := r.findByName(providerName)
+	if p == nil {
+		return nil, fmt.Errorf("unknown provider %q", providerName)
+	}
+	pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return p.ListMembers(pctx, projectKey)
 }
 
 // SearchTasks searches across all providers concurrently.

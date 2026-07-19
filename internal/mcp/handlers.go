@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/Gabriel100201/tablero/internal/provider"
@@ -18,6 +19,31 @@ func strPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+// optStr returns a pointer to the argument's value when the key is present in
+// the request, or nil when it is absent. Unlike strPtr it preserves an explicit
+// empty/"none" value, so callers can distinguish "leave unchanged" (absent) from
+// "clear this field" (present but "none"/"").
+func optStr(req mcp.CallToolRequest, key string) *string {
+	args := req.GetArguments()
+	v, ok := args[key]
+	if !ok || v == nil {
+		return nil
+	}
+	s := fmt.Sprintf("%v", v)
+	return &s
+}
+
+// splitLabels turns a comma-separated label string into a trimmed slice.
+func splitLabels(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func handleTasksList(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -168,6 +194,20 @@ func handleTasksCreate(reg *provider.Registry) func(ctx context.Context, req mcp
 			Priority:    strParam(req, "priority"),
 			StateID:     strParam(req, "state_id"),
 			Type:        strParam(req, "type"),
+			Assignee:    strParam(req, "assignee"),
+			DueDate:     strParam(req, "due_date"),
+			Cycle:       strParam(req, "cycle"),
+			Parent:      strParam(req, "parent"),
+		}
+		if labels := strParam(req, "labels"); labels != "" {
+			input.Labels = splitLabels(labels)
+		}
+		if est := strParam(req, "estimate"); est != "" {
+			v, err := strconv.ParseFloat(strings.TrimSpace(est), 64)
+			if err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid estimate %q: must be a number", est)), nil
+			}
+			input.Estimate = &v
 		}
 
 		if input.Provider == "" || input.Project == "" || input.Title == "" {
@@ -196,6 +236,23 @@ func handleTasksUpdate(reg *provider.Registry) func(ctx context.Context, req mcp
 			Description: strPtr(strParam(req, "description")),
 			StateID:     strPtr(strParam(req, "state_id")),
 			Priority:    strPtr(strParam(req, "priority")),
+			State:       optStr(req, "state"),
+			Assignee:    optStr(req, "assignee"),
+			Project:     optStr(req, "project"),
+			DueDate:     optStr(req, "due_date"),
+			Cycle:       optStr(req, "cycle"),
+			Parent:      optStr(req, "parent"),
+		}
+		if labels := optStr(req, "labels"); labels != nil {
+			l := splitLabels(*labels)
+			input.Labels = &l
+		}
+		if est := optStr(req, "estimate"); est != nil {
+			if v, err := strconv.ParseFloat(strings.TrimSpace(*est), 64); err == nil {
+				input.Estimate = &v
+			} else {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid estimate %q: must be a number", *est)), nil
+			}
 		}
 
 		task, err := reg.UpdateTask(ctx, identifier, input)
@@ -552,6 +609,56 @@ func handleDocsSearch(reg *provider.Registry) func(ctx context.Context, req mcp.
 			}
 			sb.WriteString(fmt.Sprintf("| %s | %s | %s | %s |\n", d.SlugID, title, project, d.Source))
 		}
+		return mcp.NewToolResultText(sb.String()), nil
+	}
+}
+
+func handleTasksComment(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		identifier := strParam(req, "identifier")
+		body := strParam(req, "body")
+		if identifier == "" || body == "" {
+			return mcp.NewToolResultError("identifier and body are required"), nil
+		}
+
+		comment, err := reg.AddComment(ctx, identifier, body)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error adding comment: %v", err)), nil
+		}
+
+		author := comment.Author
+		if author == "" {
+			author = "you"
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Comment added to **%s** by %s.", identifier, author)), nil
+	}
+}
+
+func handleTasksMembers(reg *provider.Registry) func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		providerName := strParam(req, "provider")
+		project := strParam(req, "project")
+		if providerName == "" {
+			return mcp.NewToolResultError("provider is required"), nil
+		}
+
+		members, err := reg.ListMembers(ctx, providerName, project)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Error: %v", err)), nil
+		}
+		if len(members) == 0 {
+			return mcp.NewToolResultText("No assignable members found."), nil
+		}
+
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("## Assignable members in %s — %d\n\n", providerName, len(members)))
+		sb.WriteString("| Name | Display Name | Email |\n")
+		sb.WriteString("|---|---|---|\n")
+		for _, m := range members {
+			sb.WriteString(fmt.Sprintf("| %s | %s | %s |\n",
+				dashIfEmpty(m.Name), dashIfEmpty(m.DisplayName), dashIfEmpty(m.Email)))
+		}
+		sb.WriteString("\nPass a name or email as `assignee` in tasks_update / tasks_create.")
 		return mcp.NewToolResultText(sb.String()), nil
 	}
 }

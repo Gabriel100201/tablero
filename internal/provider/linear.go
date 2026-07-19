@@ -219,6 +219,46 @@ func (l *linearProvider) CreateTask(ctx context.Context, input CreateInput) (*Ta
 	if input.StateID != "" {
 		issueInput["stateId"] = input.StateID
 	}
+	if input.Assignee != "" {
+		userID, err := l.resolveUserID(ctx, input.Assignee)
+		if err != nil {
+			return nil, err
+		}
+		if userID != "" {
+			issueInput["assigneeId"] = userID
+		}
+	}
+	if len(input.Labels) > 0 {
+		labelIDs, err := l.resolveLabelIDs(ctx, input.Labels)
+		if err != nil {
+			return nil, err
+		}
+		issueInput["labelIds"] = labelIDs
+	}
+	if input.DueDate != "" && !isClear(input.DueDate) {
+		issueInput["dueDate"] = input.DueDate
+	}
+	if input.Estimate != nil {
+		issueInput["estimate"] = *input.Estimate
+	}
+	if input.Cycle != "" {
+		cycleID, err := l.resolveCycleID(ctx, teamID, input.Cycle)
+		if err != nil {
+			return nil, err
+		}
+		if cycleID != "" {
+			issueInput["cycleId"] = cycleID
+		}
+	}
+	if input.Parent != "" {
+		parentID, err := l.resolveParentID(ctx, input.Parent)
+		if err != nil {
+			return nil, err
+		}
+		if parentID != "" {
+			issueInput["parentId"] = parentID
+		}
+	}
 
 	vars := map[string]any{"input": issueInput}
 
@@ -244,8 +284,9 @@ func (l *linearProvider) CreateTask(ctx context.Context, input CreateInput) (*Ta
 }
 
 func (l *linearProvider) UpdateTask(ctx context.Context, identifier string, input UpdateInput) (*Task, error) {
-	// First get the issue ID
-	issueID, err := l.resolveIssueID(ctx, identifier)
+	// Resolve the issue ID plus its team context (needed to resolve state,
+	// labels and cycle names, which are scoped to a team).
+	ref, err := l.resolveIssueRef(ctx, identifier)
 	if err != nil {
 		return nil, err
 	}
@@ -272,14 +313,62 @@ func (l *linearProvider) UpdateTask(ctx context.Context, identifier string, inpu
 	if input.Description != nil {
 		updateInput["description"] = *input.Description
 	}
-	if input.StateID != nil {
-		updateInput["stateId"] = *input.StateID
-	}
 	if input.Priority != nil {
 		updateInput["priority"] = priorityToInt(*input.Priority)
 	}
+	// State: prefer the resolved State field; fall back to the raw StateID.
+	if input.State != nil {
+		stateID, err := l.resolveStateID(ctx, ref.teamKey, *input.State)
+		if err != nil {
+			return nil, err
+		}
+		updateInput["stateId"] = stateID
+	} else if input.StateID != nil {
+		updateInput["stateId"] = *input.StateID
+	}
+	if input.Assignee != nil {
+		userID, err := l.resolveUserID(ctx, *input.Assignee)
+		if err != nil {
+			return nil, err
+		}
+		updateInput["assigneeId"] = nilIfEmpty(userID)
+	}
+	if input.Project != nil {
+		projectID, err := l.resolveProjectUUID(ctx, *input.Project)
+		if err != nil {
+			return nil, err
+		}
+		updateInput["projectId"] = nilIfEmpty(projectID)
+	}
+	if input.Labels != nil {
+		labelIDs, err := l.resolveLabelIDs(ctx, *input.Labels)
+		if err != nil {
+			return nil, err
+		}
+		updateInput["labelIds"] = labelIDs
+	}
+	if input.DueDate != nil {
+		updateInput["dueDate"] = nilIfClear(*input.DueDate)
+	}
+	if input.Estimate != nil {
+		updateInput["estimate"] = *input.Estimate
+	}
+	if input.Cycle != nil {
+		cycleID, err := l.resolveCycleID(ctx, ref.teamID, *input.Cycle)
+		if err != nil {
+			return nil, err
+		}
+		updateInput["cycleId"] = nilIfEmpty(cycleID)
+	}
+	if input.Parent != nil {
+		parentID, err := l.resolveParentID(ctx, *input.Parent)
+		if err != nil {
+			return nil, err
+		}
+		updateInput["parentId"] = nilIfEmpty(parentID)
+	}
 
-	vars := map[string]any{"id": issueID, "input": updateInput}
+	vars := map[string]any{"id": ref.id, "input": updateInput}
 
 	var resp struct {
 		Data struct {
@@ -546,6 +635,319 @@ func (l *linearProvider) resolveIssueID(ctx context.Context, identifier string) 
 
 // ─── Types ────────────────────────────────────────────────────────���──────────
 
+// issueRef holds an issue's UUID plus its owning team, needed to resolve
+// team-scoped names (states, labels, cycles) during an update.
+type issueRef struct {
+	id      string
+	teamID  string
+	teamKey string
+}
+
+// resolveIssueRef looks up an issue by "TEAMKEY-NUMBER" and returns its UUID and team.
+func (l *linearProvider) resolveIssueRef(ctx context.Context, identifier string) (*issueRef, error) {
+	parts := strings.SplitN(identifier, "-", 2)
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid identifier %q", identifier)
+	}
+
+	query := `query($filter: IssueFilter) {
+		issues(filter: $filter, first: 1) { nodes { id team { id key } } }
+	}`
+	vars := map[string]any{
+		"filter": map[string]any{
+			"team":   map[string]any{"key": map[string]any{"eq": parts[0]}},
+			"number": map[string]any{"eq": jsonNumber(parts[1])},
+		},
+	}
+
+	var resp struct {
+		Data struct {
+			Issues struct {
+				Nodes []struct {
+					ID   string `json:"id"`
+					Team struct {
+						ID  string `json:"id"`
+						Key string `json:"key"`
+					} `json:"team"`
+				} `json:"nodes"`
+			} `json:"issues"`
+		} `json:"data"`
+	}
+
+	if err := l.graphql(ctx, query, vars, &resp); err != nil {
+		return nil, err
+	}
+	if len(resp.Data.Issues.Nodes) == 0 {
+		return nil, fmt.Errorf("issue %s not found", identifier)
+	}
+	n := resp.Data.Issues.Nodes[0]
+	return &issueRef{id: n.ID, teamID: n.Team.ID, teamKey: n.Team.Key}, nil
+}
+
+// resolveStateID maps a workflow-state name (or UUID) to its ID within a team.
+func (l *linearProvider) resolveStateID(ctx context.Context, teamKey, val string) (string, error) {
+	if val == "" {
+		return "", fmt.Errorf("state is empty")
+	}
+	if looksLikeUUID(val) {
+		return val, nil
+	}
+	states, err := l.ListStates(ctx, teamKey)
+	if err != nil {
+		return "", err
+	}
+	for _, s := range states {
+		if strings.EqualFold(s.Name, val) {
+			return s.ID, nil
+		}
+	}
+	return "", fmt.Errorf("state %q not found in team %q (use tasks_states to list valid names)", val, teamKey)
+}
+
+// resolveUserID maps a user name/email (or UUID, "me") to a user ID.
+// Returns "" for "none"/"" (caller sets the field to null to unassign).
+func (l *linearProvider) resolveUserID(ctx context.Context, val string) (string, error) {
+	if isClear(val) {
+		return "", nil
+	}
+	if strings.EqualFold(val, "me") {
+		var resp struct {
+			Data struct {
+				Viewer struct {
+					ID string `json:"id"`
+				} `json:"viewer"`
+			} `json:"data"`
+		}
+		if err := l.graphql(ctx, `{ viewer { id } }`, nil, &resp); err != nil {
+			return "", err
+		}
+		return resp.Data.Viewer.ID, nil
+	}
+	if looksLikeUUID(val) {
+		return val, nil
+	}
+
+	members, err := l.ListMembers(ctx, "")
+	if err != nil {
+		return "", err
+	}
+	for _, m := range members {
+		if strings.EqualFold(m.Name, val) || strings.EqualFold(m.DisplayName, val) || strings.EqualFold(m.Email, val) {
+			return m.ID, nil
+		}
+	}
+	return "", fmt.Errorf("user %q not found (use tasks_members to list assignable users)", val)
+}
+
+// resolveProjectUUID maps a project name (or UUID) to its Linear project ID.
+// Returns "" for "none"/"" (caller sets the field to null to remove it).
+func (l *linearProvider) resolveProjectUUID(ctx context.Context, val string) (string, error) {
+	if isClear(val) {
+		return "", nil
+	}
+	if looksLikeUUID(val) {
+		return val, nil
+	}
+	projects, err := l.ListProjects(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, p := range projects {
+		if p.Kind == "project" && strings.EqualFold(p.Name, val) {
+			return p.ID, nil
+		}
+	}
+	return "", fmt.Errorf("project %q not found in %s (use tasks_projects to list projects)", val, l.name)
+}
+
+// resolveLabelIDs maps label names (or UUIDs) to label IDs. An empty slice
+// clears all labels. Unknown names are an error.
+func (l *linearProvider) resolveLabelIDs(ctx context.Context, names []string) ([]string, error) {
+	out := []string{}
+	if len(names) == 0 {
+		return out, nil
+	}
+
+	query := `{ issueLabels(first: 250) { nodes { id name } } }`
+	var resp struct {
+		Data struct {
+			IssueLabels struct {
+				Nodes []struct {
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				} `json:"nodes"`
+			} `json:"issueLabels"`
+		} `json:"data"`
+	}
+	if err := l.graphql(ctx, query, nil, &resp); err != nil {
+		return nil, err
+	}
+
+	for _, name := range names {
+		if looksLikeUUID(name) {
+			out = append(out, name)
+			continue
+		}
+		found := ""
+		for _, n := range resp.Data.IssueLabels.Nodes {
+			if strings.EqualFold(n.Name, name) {
+				found = n.ID
+				break
+			}
+		}
+		if found == "" {
+			return nil, fmt.Errorf("label %q not found", name)
+		}
+		out = append(out, found)
+	}
+	return out, nil
+}
+
+// resolveCycleID maps a cycle name/number (or UUID, "active") to a cycle ID
+// within a team. Returns "" for "none"/"" (caller sets the field to null).
+func (l *linearProvider) resolveCycleID(ctx context.Context, teamID, val string) (string, error) {
+	if isClear(val) {
+		return "", nil
+	}
+	if looksLikeUUID(val) {
+		return val, nil
+	}
+	if strings.EqualFold(val, "active") {
+		query := `query($id: String!) { team(id: $id) { activeCycle { id } } }`
+		var resp struct {
+			Data struct {
+				Team struct {
+					ActiveCycle *struct {
+						ID string `json:"id"`
+					} `json:"activeCycle"`
+				} `json:"team"`
+			} `json:"data"`
+		}
+		if err := l.graphql(ctx, query, map[string]any{"id": teamID}, &resp); err != nil {
+			return "", err
+		}
+		if resp.Data.Team.ActiveCycle == nil {
+			return "", fmt.Errorf("team has no active cycle")
+		}
+		return resp.Data.Team.ActiveCycle.ID, nil
+	}
+
+	query := `query($teamId: ID!) {
+		cycles(filter: { team: { id: { eq: $teamId } } }, first: 100) {
+			nodes { id name number }
+		}
+	}`
+	var resp struct {
+		Data struct {
+			Cycles struct {
+				Nodes []struct {
+					ID     string `json:"id"`
+					Name   string `json:"name"`
+					Number int    `json:"number"`
+				} `json:"nodes"`
+			} `json:"cycles"`
+		} `json:"data"`
+	}
+	if err := l.graphql(ctx, query, map[string]any{"teamId": teamID}, &resp); err != nil {
+		return "", err
+	}
+	for _, c := range resp.Data.Cycles.Nodes {
+		if strings.EqualFold(c.Name, val) || fmt.Sprintf("%d", c.Number) == strings.TrimSpace(val) {
+			return c.ID, nil
+		}
+	}
+	return "", fmt.Errorf("cycle %q not found in team", val)
+}
+
+// resolveParentID maps a parent identifier (e.g. "ABC-42") to a UUID.
+// Returns "" for "none"/"" (caller detaches the parent).
+func (l *linearProvider) resolveParentID(ctx context.Context, val string) (string, error) {
+	if isClear(val) {
+		return "", nil
+	}
+	if looksLikeUUID(val) {
+		return val, nil
+	}
+	return l.resolveIssueID(ctx, val)
+}
+
+func (l *linearProvider) AddComment(ctx context.Context, identifier, body string) (*Comment, error) {
+	if strings.TrimSpace(body) == "" {
+		return nil, fmt.Errorf("comment body is empty")
+	}
+	issueID, err := l.resolveIssueID(ctx, identifier)
+	if err != nil {
+		return nil, err
+	}
+
+	mutation := `mutation($input: CommentCreateInput!) {
+		commentCreate(input: $input) {
+			success
+			comment { id createdAt user { name } }
+		}
+	}`
+	vars := map[string]any{"input": map[string]any{"issueId": issueID, "body": body}}
+
+	var resp struct {
+		Data struct {
+			CommentCreate struct {
+				Success bool `json:"success"`
+				Comment struct {
+					ID        string `json:"id"`
+					CreatedAt string `json:"createdAt"`
+					User      struct {
+						Name string `json:"name"`
+					} `json:"user"`
+				} `json:"comment"`
+			} `json:"commentCreate"`
+		} `json:"data"`
+	}
+	if err := l.graphql(ctx, mutation, vars, &resp); err != nil {
+		return nil, err
+	}
+	if !resp.Data.CommentCreate.Success {
+		return nil, fmt.Errorf("Linear commentCreate returned success=false")
+	}
+	c := resp.Data.CommentCreate.Comment
+	return &Comment{Author: c.User.Name, Body: body, CreatedAt: c.CreatedAt}, nil
+}
+
+func (l *linearProvider) ListMembers(ctx context.Context, projectKey string) ([]Member, error) {
+	// projectKey is accepted for interface symmetry; workspace-wide listing is
+	// used in this version (team-scoped filtering is a future improvement).
+	query := `{ users(first: 250) { nodes { id name displayName email active } } }`
+	var resp struct {
+		Data struct {
+			Users struct {
+				Nodes []struct {
+					ID          string `json:"id"`
+					Name        string `json:"name"`
+					DisplayName string `json:"displayName"`
+					Email       string `json:"email"`
+					Active      bool   `json:"active"`
+				} `json:"nodes"`
+			} `json:"users"`
+		} `json:"data"`
+	}
+	if err := l.graphql(ctx, query, nil, &resp); err != nil {
+		return nil, err
+	}
+
+	var members []Member
+	for _, u := range resp.Data.Users.Nodes {
+		if !u.Active {
+			continue
+		}
+		members = append(members, Member{
+			ID:          u.ID,
+			Name:        u.Name,
+			DisplayName: u.DisplayName,
+			Email:       u.Email,
+		})
+	}
+	return members, nil
+}
+
 type linearIssue struct {
 	ID             string `json:"id"`
 	Identifier     string `json:"identifier"`
@@ -745,6 +1147,50 @@ func priorityToInt(p string) int {
 
 func jsonNumber(s string) json.Number {
 	return json.Number(s)
+}
+
+// looksLikeUUID reports whether s is a canonical 36-char UUID (8-4-4-4-12).
+// Used to decide whether to pass a value straight through or resolve it by name.
+func looksLikeUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+			if !isHex {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// isClear reports whether a value means "clear/unassign this field".
+func isClear(s string) bool {
+	return s == "" || strings.EqualFold(s, "none") || strings.EqualFold(s, "null")
+}
+
+// nilIfEmpty returns nil (JSON null) for "", otherwise the string. Used so an
+// empty resolved ID unsets the field in a GraphQL mutation input.
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// nilIfClear returns nil (JSON null) when s means "clear", otherwise the string.
+func nilIfClear(s string) any {
+	if isClear(s) {
+		return nil
+	}
+	return s
 }
 
 // ─── Documents ────────────────────────────────────────────────────────────────

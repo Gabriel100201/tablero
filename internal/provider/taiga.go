@@ -354,6 +354,16 @@ func (t *taigaProvider) SearchDocuments(ctx context.Context, query string) ([]Do
 	return nil, ErrDocsNotSupported
 }
 
+// AddComment is not supported by the Taiga provider in the current version.
+func (t *taigaProvider) AddComment(ctx context.Context, identifier, body string) (*Comment, error) {
+	return nil, ErrNotSupported
+}
+
+// ListMembers is not supported by the Taiga provider in the current version.
+func (t *taigaProvider) ListMembers(ctx context.Context, projectKey string) ([]Member, error) {
+	return nil, ErrNotSupported
+}
+
 func (t *taigaProvider) ListStates(ctx context.Context, projectKey string) ([]State, error) {
 	if err := t.ensureAuth(ctx); err != nil {
 		return nil, err

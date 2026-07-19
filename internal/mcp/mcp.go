@@ -11,11 +11,13 @@ const serverInstructions = `Tablero is a unified task aggregator across Linear, 
 TOOLS:
   tasks_list     — list open tasks across all providers (filter by provider/project/state/assigned)
   tasks_get      — get full task details by identifier
-  tasks_create   — create a task in a specific provider/project
-  tasks_update   — update task status, title, priority
+  tasks_create   — create a task in a specific provider/project (Linear: also assignee, labels, due_date, estimate, cycle, parent)
+  tasks_update   — update a task: status/state (by name), assignee, project, labels, due date, estimate, cycle, parent, title, priority
   tasks_search   — search tasks by keyword across all providers
   tasks_projects — list teams and projects from all providers (filter by kind=team|project|all; Linear projects include health, priority, lead, target date, progress)
   tasks_states   — list valid workflow states for a project
+  tasks_members  — list assignable users for a provider (Linear); use their names/emails as 'assignee'
+  tasks_comment  — post a comment on a task (Linear); read comments via tasks_get
   docs_list      — list Linear documents (filter by provider/project/query)
   docs_get       — read a Linear document by slugId or UUID (returns markdown content)
   docs_create    — create a Linear document inside a project
@@ -42,7 +44,10 @@ USAGE:
   When user asks "what do I have today?" → tasks_list with assigned=true
   When user asks "show me tasks in project X" → tasks_list with project=X (no assigned)
   When user says "create task X in Y" → tasks_create with correct provider/project
-  When updating status → call tasks_states first for valid IDs, then tasks_update`
+  When changing status → pass state="<name>" to tasks_update (names come from tasks_states); state_id (UUID) still works.
+  When assigning a person → pass assignee="<name|email>" (or "me"); discover names via tasks_members. Use "none" to unassign.
+  When moving to a project → pass project="<name>". When commenting → tasks_comment.
+  "none" clears a field (assignee, project, cycle, due_date, parent).`
 
 func NewServer(reg *provider.Registry) *server.MCPServer {
 	srv := server.NewMCPServer(
@@ -132,6 +137,24 @@ func registerTools(srv *server.MCPServer, reg *provider.Registry) {
 			mcp.WithString("type",
 				mcp.Description("For Taiga: 'userstory' or 'task' (default: userstory)"),
 			),
+			mcp.WithString("assignee",
+				mcp.Description("Assign to a user by name, email, or UUID; 'me' for yourself. Use tasks_members to list users. (Linear only)"),
+			),
+			mcp.WithString("labels",
+				mcp.Description("Comma-separated label names, e.g. 'bug,urgent'. (Linear only)"),
+			),
+			mcp.WithString("due_date",
+				mcp.Description("Due date as YYYY-MM-DD. (Linear only)"),
+			),
+			mcp.WithString("estimate",
+				mcp.Description("Point estimate as a number, e.g. '3'. (Linear only)"),
+			),
+			mcp.WithString("cycle",
+				mcp.Description("Cycle by name/number or UUID; 'active' for the current cycle. (Linear only)"),
+			),
+			mcp.WithString("parent",
+				mcp.Description("Parent issue identifier (e.g. 'ABC-40') to create this as a sub-issue. (Linear only)"),
+			),
 		),
 		handleTasksCreate(reg),
 	)
@@ -139,7 +162,7 @@ func registerTools(srv *server.MCPServer, reg *provider.Registry) {
 	// ─── tasks_update ────────────────────────────────────────────────────
 	srv.AddTool(
 		mcp.NewTool("tasks_update",
-			mcp.WithDescription("Update an existing task's status, title, or other fields."),
+			mcp.WithDescription("Update an existing task. Change status, assignee, project, labels, due date, and more. Most fields accept a human NAME or a UUID (Linear resolves it): e.g. state=\"In Progress\", assignee=\"Jane Doe\", project=\"Mobile v2\". Pass \"none\" to clear a field (unassign, remove from project/cycle, clear due date, detach parent). Only the fields you pass are changed. Linear only for the rich fields; Taiga honours title/description/state_id."),
 			mcp.WithTitleAnnotation("Update Task"),
 			mcp.WithReadOnlyHintAnnotation(false),
 			mcp.WithDestructiveHintAnnotation(false),
@@ -147,7 +170,7 @@ func registerTools(srv *server.MCPServer, reg *provider.Registry) {
 			mcp.WithOpenWorldHintAnnotation(true),
 			mcp.WithString("identifier",
 				mcp.Required(),
-				mcp.Description("Task identifier"),
+				mcp.Description("Task identifier (e.g. 'ABC-42')"),
 			),
 			mcp.WithString("title",
 				mcp.Description("New title"),
@@ -155,11 +178,35 @@ func registerTools(srv *server.MCPServer, reg *provider.Registry) {
 			mcp.WithString("description",
 				mcp.Description("New description"),
 			),
+			mcp.WithString("state",
+				mcp.Description("New workflow state by NAME (e.g. 'In Progress', 'Done') or UUID. Preferred over state_id. Use tasks_states to see valid names."),
+			),
 			mcp.WithString("state_id",
-				mcp.Description("New state ID (use tasks_states for valid values)"),
+				mcp.Description("New state UUID (legacy; prefer 'state' with a name). Use tasks_states for valid IDs."),
 			),
 			mcp.WithString("priority",
 				mcp.Description("New priority (Linear only): urgent, high, medium, low, none"),
+			),
+			mcp.WithString("assignee",
+				mcp.Description("Assign to a user by name, email, or UUID; 'me' for yourself; 'none' to unassign. Use tasks_members to list users. (Linear only)"),
+			),
+			mcp.WithString("project",
+				mcp.Description("Move to a project by name or UUID; 'none' to remove from its project. Use tasks_projects to list projects. (Linear only)"),
+			),
+			mcp.WithString("labels",
+				mcp.Description("Comma-separated label names, e.g. 'bug,urgent'. Replaces the whole label set. Empty string clears all labels. (Linear only)"),
+			),
+			mcp.WithString("due_date",
+				mcp.Description("Due date as YYYY-MM-DD, or 'none' to clear. (Linear only)"),
+			),
+			mcp.WithString("estimate",
+				mcp.Description("Point estimate as a number, e.g. '3'. (Linear only)"),
+			),
+			mcp.WithString("cycle",
+				mcp.Description("Cycle by name/number or UUID; 'active' for the current cycle; 'none' to clear. (Linear only)"),
+			),
+			mcp.WithString("parent",
+				mcp.Description("Parent issue identifier (e.g. 'ABC-40') to make this a sub-issue; 'none' to detach. (Linear only)"),
 			),
 		),
 		handleTasksUpdate(reg),
@@ -371,5 +418,46 @@ func registerTools(srv *server.MCPServer, reg *provider.Registry) {
 			),
 		),
 		handleTasksStates(reg),
+	)
+
+	// ─── tasks_comment ───────────────────────────────────────────────────
+	srv.AddTool(
+		mcp.NewTool("tasks_comment",
+			mcp.WithDescription("Post a comment on a task. Reading comments is done via tasks_get. (Linear only; Taiga not supported yet.)"),
+			mcp.WithTitleAnnotation("Add Comment"),
+			mcp.WithReadOnlyHintAnnotation(false),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(false),
+			mcp.WithOpenWorldHintAnnotation(true),
+			mcp.WithString("identifier",
+				mcp.Required(),
+				mcp.Description("Task identifier (e.g. 'ABC-42')"),
+			),
+			mcp.WithString("body",
+				mcp.Required(),
+				mcp.Description("Comment body (markdown supported)"),
+			),
+		),
+		handleTasksComment(reg),
+	)
+
+	// ─── tasks_members ───────────────────────────────────────────────────
+	srv.AddTool(
+		mcp.NewTool("tasks_members",
+			mcp.WithDescription("List assignable users for a provider. Use the returned names or emails as the 'assignee' value in tasks_update / tasks_create. (Linear only; Taiga not supported yet.)"),
+			mcp.WithTitleAnnotation("List Members"),
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithDestructiveHintAnnotation(false),
+			mcp.WithIdempotentHintAnnotation(true),
+			mcp.WithOpenWorldHintAnnotation(true),
+			mcp.WithString("provider",
+				mcp.Required(),
+				mcp.Description("Provider name (must be a Linear provider)"),
+			),
+			mcp.WithString("project",
+				mcp.Description("Optional project/team scope hint (currently informational)"),
+			),
+		),
+		handleTasksMembers(reg),
 	)
 }

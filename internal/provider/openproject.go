@@ -314,6 +314,16 @@ func (o *openProjectProvider) ListStates(ctx context.Context, projectKey string)
 	return states, nil
 }
 
+// AddComment is not supported by the OpenProject provider in the current version.
+func (o *openProjectProvider) AddComment(ctx context.Context, identifier, body string) (*Comment, error) {
+	return nil, ErrNotSupported
+}
+
+// ListMembers is not supported by the OpenProject provider in the current version.
+func (o *openProjectProvider) ListMembers(ctx context.Context, projectKey string) ([]Member, error) {
+	return nil, ErrNotSupported
+}
+
 // ─── Documents (unsupported) ──────────────────────────────────────────────────
 
 func (o *openProjectProvider) ListDocuments(ctx context.Context, opts DocumentListOpts) ([]Document, error) {
